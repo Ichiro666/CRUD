@@ -20,9 +20,14 @@ class PlaylistManager extends StatefulWidget {
 }
 
 class _PlaylistManagerState extends State<PlaylistManager> {
+  void _refreshState() {
+    setState(() {});
+  }
+
   void _showCreatePlaylistDialog() {
     final nameController = TextEditingController();
     final descController = TextEditingController();
+    String imageUrl = ''; // Default empty image URL
 
     showDialog(
       context: context,
@@ -33,6 +38,35 @@ class _PlaylistManagerState extends State<PlaylistManager> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Image Preview
+            Container(
+              height: 120,
+              width: 120,
+              decoration: BoxDecoration(
+                color: AppColors.spotifyLightGrey,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: imageUrl.isEmpty
+                  ? Icon(Icons.music_note,
+                      color: AppColors.spotifyGreen, size: 40)
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(imageUrl, fit: BoxFit.cover),
+                    ),
+            ),
+            SizedBox(height: 16),
+            // Image URL Field
+            TextField(
+              style: TextStyle(color: AppColors.spotifyWhite),
+              decoration: InputDecoration(
+                labelText: 'Image URL (optional)',
+                labelStyle: TextStyle(color: AppColors.spotifyWhite),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.spotifyGreen),
+                ),
+              ),
+              onChanged: (value) => imageUrl = value,
+            ),
             TextField(
               controller: nameController,
               style: TextStyle(color: AppColors.spotifyWhite),
@@ -75,9 +109,11 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                   'id': DateTime.now().toString(),
                   'name': nameController.text,
                   'description': descController.text,
+                  'imageUrl': imageUrl,
                   'tracks': [],
                 });
                 Navigator.pop(context);
+                _refreshState();
               }
             },
           ),
@@ -117,6 +153,27 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                   color: AppColors.spotifyDarkGrey,
                   margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: ListTile(
+                    leading: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: AppColors.spotifyLightGrey,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: playlist['imageUrl']?.isNotEmpty == true
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.network(
+                                playlist['imageUrl'],
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(Icons.music_note,
+                                        color: AppColors.spotifyGreen),
+                              ),
+                            )
+                          : Icon(Icons.music_note,
+                              color: AppColors.spotifyGreen),
+                    ),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -127,11 +184,12 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                               setState(() {
                                 playlist['tracks'].removeWhere(
                                     (track) => track['id'] == trackId);
+                                _refreshState();
                               });
                             },
                           ),
                         ),
-                      );
+                      ).then((_) => _refreshState());
                     },
                     title: Text(
                       playlist['name'],
@@ -175,6 +233,7 @@ class _PlaylistManagerState extends State<PlaylistManager> {
   void _showEditDialog(Map<String, dynamic> playlist) {
     final nameController = TextEditingController(text: playlist['name']);
     final descController = TextEditingController(text: playlist['description']);
+    String imageUrl = playlist['imageUrl'] ?? '';
 
     showDialog(
       context: context,
@@ -182,26 +241,66 @@ class _PlaylistManagerState extends State<PlaylistManager> {
         backgroundColor: AppColors.spotifyDarkGrey,
         title: Text('Edit Playlist',
             style: TextStyle(color: AppColors.spotifyWhite)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              style: TextStyle(color: AppColors.spotifyWhite),
-              decoration: InputDecoration(
-                labelText: 'Playlist Name',
-                labelStyle: TextStyle(color: AppColors.spotifyWhite),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Image Preview
+              Container(
+                height: 120,
+                width: 120,
+                decoration: BoxDecoration(
+                  color: AppColors.spotifyLightGrey,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: imageUrl.isEmpty
+                    ? Icon(Icons.music_note,
+                        color: AppColors.spotifyGreen, size: 40)
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Icon(
+                              Icons.music_note,
+                              color: AppColors.spotifyGreen,
+                              size: 40),
+                        ),
+                      ),
               ),
-            ),
-            TextField(
-              controller: descController,
-              style: TextStyle(color: AppColors.spotifyWhite),
-              decoration: InputDecoration(
-                labelText: 'Description',
-                labelStyle: TextStyle(color: AppColors.spotifyWhite),
+              SizedBox(height: 16),
+              // Image URL Field
+              TextField(
+                style: TextStyle(color: AppColors.spotifyWhite),
+                controller: TextEditingController(text: imageUrl),
+                decoration: InputDecoration(
+                  labelText: 'Image URL',
+                  labelStyle: TextStyle(color: AppColors.spotifyWhite),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.spotifyGreen),
+                  ),
+                ),
+                onChanged: (value) => imageUrl = value,
               ),
-            ),
-          ],
+              SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                style: TextStyle(color: AppColors.spotifyWhite),
+                decoration: InputDecoration(
+                  labelText: 'Playlist Name',
+                  labelStyle: TextStyle(color: AppColors.spotifyWhite),
+                ),
+              ),
+              TextField(
+                controller: descController,
+                style: TextStyle(color: AppColors.spotifyWhite),
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  labelStyle: TextStyle(color: AppColors.spotifyWhite),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -215,12 +314,18 @@ class _PlaylistManagerState extends State<PlaylistManager> {
             ),
             child: Text('Save'),
             onPressed: () {
-              widget.onPlaylistUpdate(
-                playlist['id'],
-                nameController.text,
-                descController.text,
-              );
+              setState(() {
+                playlist['name'] = nameController.text;
+                playlist['description'] = descController.text;
+                playlist['imageUrl'] = imageUrl;
+              });
               Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Playlist updated successfully!'),
+                  backgroundColor: AppColors.spotifyGreen,
+                ),
+              );
             },
           ),
         ],

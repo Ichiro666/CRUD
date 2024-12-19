@@ -236,11 +236,12 @@ class _HomePageState extends State<HomePage> {
                           playlists.firstWhere((p) => p['id'] == id);
                       playlist['name'] = name;
                       playlist['description'] = desc;
+                      // Image URL will be updated directly in the playlist object
                     });
                   },
                 ),
               ),
-            ),
+            ).then((_) => setState(() {})), // Add refresh after returning
           ),
         ],
       ),
@@ -357,7 +358,10 @@ class _HomePageState extends State<HomePage> {
                 title: Text(playlist['name'],
                     style: TextStyle(color: AppColors.spotifyWhite)),
                 onTap: () {
-                  playlist['tracks'].add(track);
+                  setState(() {
+                    // Add setState here
+                    playlist['tracks'].add(track);
+                  });
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -371,7 +375,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-    );
+    ).then((_) => setState(() {})); // Add refresh after dialog closes
   }
 }
 
