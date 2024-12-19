@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'constants.dart';
 import 'playlist_detail_screen.dart';
 
@@ -216,7 +217,8 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                       ],
                       onSelected: (value) {
                         if (value == 'delete') {
-                          widget.onPlaylistDelete(playlist['id']);
+                          _showDeleteConfirmationDialog(
+                              context, playlist, index);
                         } else if (value == 'edit') {
                           // Show edit dialog
                           _showEditDialog(playlist);
@@ -227,6 +229,44 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                 );
               },
             ),
+    );
+  }
+
+  /// Menampilkan dialog konfirmasi penghapusan
+  void _showDeleteConfirmationDialog(
+      BuildContext context, Map<String, dynamic> playlist, int index) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.spotifyDarkGrey,
+          title: Text(
+            'Delete Playlist',
+            style: TextStyle(color: AppColors.spotifyWhite),
+          ),
+          content: Text(
+            'Are you sure you want to delete "${playlist['name']}"?',
+            style: TextStyle(color: AppColors.spotifyWhite.withOpacity(0.7)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancel',
+                  style: TextStyle(color: AppColors.spotifyGreen)),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  widget.playlists.removeAt(index);
+                  widget.onPlaylistDelete(playlist['id']);
+                });
+                Navigator.of(context).pop();
+              },
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
     );
   }
 

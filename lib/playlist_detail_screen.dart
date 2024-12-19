@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+
 import 'constants.dart';
 
-class PlaylistDetailScreen extends StatelessWidget {
+class PlaylistDetailScreen extends StatefulWidget {
   final Map<String, dynamic> playlist;
   final Function(String)? onRemoveTrack;
 
@@ -12,9 +13,30 @@ class PlaylistDetailScreen extends StatelessWidget {
   }) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final tracks = playlist['tracks'] as List? ?? [];
+  _PlaylistDetailScreenState createState() => _PlaylistDetailScreenState();
+}
 
+class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
+  late List tracks;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize tracks from playlist
+    tracks = widget.playlist['tracks'] as List? ?? [];
+  }
+
+  void removeTrack(String id) {
+    setState(() {
+      tracks.removeWhere((track) => track['id'] == id);
+    });
+    if (widget.onRemoveTrack != null) {
+      widget.onRemoveTrack!(id);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.spotifyBlack,
       body: CustomScrollView(
@@ -25,15 +47,13 @@ class PlaylistDetailScreen extends StatelessWidget {
             floating: false,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
-              title: Text(playlist['name'] ?? 'Playlist',
-                  style: TextStyle(color: AppColors.spotifyWhite)),
               background: Container(
                 decoration: BoxDecoration(
                   color: AppColors.spotifyLightGrey,
                 ),
-                child: playlist['imageUrl']?.isNotEmpty == true
+                child: widget.playlist['imageUrl']?.isNotEmpty == true
                     ? Image.network(
-                        playlist['imageUrl']!,
+                        widget.playlist['imageUrl']!,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Icon(
                             Icons.music_note,
@@ -57,17 +77,17 @@ class PlaylistDetailScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      playlist['name'] ?? 'Untitled Playlist',
+                      widget.playlist['name'] ?? 'Untitled Playlist',
                       style: TextStyle(
                         color: AppColors.spotifyWhite,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (playlist['description']?.isNotEmpty == true) ...[
+                    if (widget.playlist['description']?.isNotEmpty == true) ...[
                       SizedBox(height: 8),
                       Text(
-                        playlist['description']!,
+                        widget.playlist['description']!,
                         style: TextStyle(
                           color: AppColors.spotifyWhite.withOpacity(0.7),
                           fontSize: 16,
@@ -129,13 +149,11 @@ class PlaylistDetailScreen extends StatelessWidget {
                       style: TextStyle(
                           color: AppColors.spotifyWhite.withOpacity(0.7)),
                     ),
-                    trailing: onRemoveTrack != null
-                        ? IconButton(
-                            icon: Icon(Icons.remove_circle_outline,
-                                color: Colors.red),
-                            onPressed: () => onRemoveTrack!(id),
-                          )
-                        : null,
+                    trailing: IconButton(
+                      icon:
+                          Icon(Icons.remove_circle_outline, color: Colors.red),
+                      onPressed: () => removeTrack(id),
+                    ),
                   ),
                 );
               }).toList(),
