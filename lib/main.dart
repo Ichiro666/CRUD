@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'database_helper.dart';
+import 'constants.dart';
+import 'playlist_manager.dart';
 
 void main() {
   runApp(MyApp());
@@ -37,55 +38,53 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  List<dynamic> tracks = [];
+  List<Map<String, dynamic>> playlists = [];
+  String accessToken = '';
+  bool isLoading = false;
   TextEditingController searchController = TextEditingController();
   List<dynamic> searchResults = [];
-  bool isLoading = false;
-  bool showResults = false;
-  String accessToken = '';
-  List<Map<String, dynamic>> favoriteTracks = [];
+  bool isSearching = false;
 
   @override
   void initState() {
     super.initState();
     _getAccessToken();
-    _loadFavoriteTracks();
   }
 
   Future<void> _getAccessToken() async {
     final clientId = '50a9f3a3bc17484cbee69dd9d077fc77';
     final clientSecret = '0d2aa783b8db4cc48722a124e1756be7';
 
-    final response = await http.post(
-      Uri.parse('https://accounts.spotify.com/api/token'),
-      headers: {
-        'Authorization':
-            'Basic ' + base64Encode(utf8.encode('$clientId:$clientSecret')),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: {
-        'grant_type': 'client_credentials',
-      },
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('https://accounts.spotify.com/api/token'),
+        headers: {
+          'Authorization':
+              'Basic ' + base64Encode(utf8.encode('$clientId:$clientSecret')),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: {
+          'grant_type': 'client_credentials',
+        },
+      );
 
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> jsonResponse = json.decode(response.body);
-      setState(() {
-        accessToken = jsonResponse['access_token'];
-      });
-    } else {
-      // Handle error
-      print('Failed to get access token');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          accessToken = data['access_token'];
+        });
+        await _fetchNewReleases();
+      } else {
+        print('Error getting access token: ${response.statusCode}');
+        print('Response body: ${response.body}');
+      }
+    } catch (e) {
+      print('Exception during authentication: $e');
     }
   }
 
-  Future<void> _loadFavoriteTracks() async {
-    final tracks = await DatabaseHelper.instance.getFavoriteTracks();
-    setState(() {
-      favoriteTracks = tracks;
-    });
-  }
-
-  Future<void> searchTracks(String query) async {
+  Future<void> _fetchNewReleases() async {
     if (accessToken.isEmpty) {
       print('No access token available');
       return;
@@ -93,175 +92,314 @@ class _HomePageState extends State<HomePage> {
 
     setState(() => isLoading = true);
 
-    final response = await http.get(
-      Uri.parse(
-          'https://api.spotify.com/v1/search?q=$query&type=track&limit=20'),
-      headers: {
-        'Authorization': 'Bearer $accessToken',
-      },
-    );
+    try {
+      final response = await http.get(
+        Uri.parse('https://api.spotify.com/v1/browse/new-releases?limit=20'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+      );
 
-    if (response.statusCode == 200) {
-      Map<String, dynamic> data = json.decode(response.body);
-      setState(() {
-        searchResults = data['tracks']['items'];
-        isLoading = false;
-        showResults = true;
-      });
-    } else {
-      setState(() {
-        isLoading = false;
-      });
-      print('Failed to search tracks: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          tracks = data['albums']['items'];
+          isLoading = false;
+        });
+      } else {
+        print('Error fetching tracks: ${response.statusCode}');
+        print('Response body: ${response.body}');
+        setState(() => isLoading = false);
+      }
+    } catch (e) {
+      print('Exception fetching tracks: $e');
+      setState(() => isLoading = false);
     }
   }
 
-  void deleteMovie(int index) {
-    setState(() {
-      searchResults.removeAt(index);
-    });
+  Future<void> _searchTracks(String query) async {
+    if (accessToken.isEmpty || query.isEmpty) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+            'https://api.spotify.com/v1/search?q=$query&type=track&limit=20'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          searchResults = data['tracks']['items'];
+          isLoading = false;
+          isSearching = true;
+        });
+      } else {
+        setState(() => isLoading = false);
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+    }
+  }
+
+  void _showCreatePlaylistDialog() {
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Create Playlist'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(labelText: 'Playlist Name'),
+            ),
+            TextField(
+              controller: descController,
+              decoration: InputDecoration(labelText: 'Description'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final newPlaylist = {
+                'id': DateTime.now().millisecondsSinceEpoch.toString(),
+                'name': nameController.text,
+                'description': descController.text,
+                'tracks': [],
+              };
+              setState(() {
+                playlists.add(newPlaylist);
+              });
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Playlist created!')),
+              );
+            },
+            child: Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPlaylistsScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PlaylistsScreen(playlists: playlists),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.spotifyBlack,
       appBar: AppBar(
-        title: Text(
-          "Spotify Track Search",
-          style: TextStyle(color: Colors.white),
-        ),
-        centerTitle: true,
+        backgroundColor: AppColors.spotifyDarkGrey,
+        title: Text('Spotify Music',
+            style: TextStyle(color: AppColors.spotifyWhite)),
         actions: [
           IconButton(
-            icon: Icon(Icons.favorite, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => FavoriteTracksScreen(
-                    favoriteTracks: favoriteTracks,
-                    onDelete: (String id) async {
-                      await DatabaseHelper.instance.deleteFavoriteTrack(id);
-                      _loadFavoriteTracks();
-                    },
-                  ),
+            icon: Icon(Icons.playlist_play, color: AppColors.spotifyWhite),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PlaylistManager(
+                  playlists: playlists,
+                  onPlaylistCreate: (playlist) {
+                    setState(() => playlists.add(playlist));
+                  },
+                  onPlaylistDelete: (id) {
+                    setState(() {
+                      playlists.removeWhere((p) => p['id'] == id);
+                    });
+                  },
+                  onPlaylistUpdate: (id, name, desc) {
+                    setState(() {
+                      final playlist =
+                          playlists.firstWhere((p) => p['id'] == id);
+                      playlist['name'] = name;
+                      playlist['description'] = desc;
+                    });
+                  },
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            TextField(
+      body: Column(
+        children: [
+          // Search Bar
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
               controller: searchController,
+              style: TextStyle(color: AppColors.spotifyWhite),
               decoration: InputDecoration(
+                hintText: 'Search for tracks...',
+                hintStyle:
+                    TextStyle(color: AppColors.spotifyWhite.withOpacity(0.5)),
+                prefixIcon: Icon(Icons.search, color: AppColors.spotifyWhite),
+                suffixIcon: searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(Icons.clear, color: AppColors.spotifyWhite),
+                        onPressed: () {
+                          searchController.clear();
+                          setState(() {
+                            isSearching = false;
+                          });
+                        },
+                      )
+                    : null,
                 filled: true,
-                fillColor: Colors.grey[900],
-                labelText: "Search for a track",
-                labelStyle: TextStyle(color: Colors.white),
+                fillColor: AppColors.spotifyDarkGrey,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
                 ),
               ),
-              style: TextStyle(color: Colors.white),
-            ),
-            SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () {
-                String query = searchController.text.trim();
-                if (query.isNotEmpty) {
-                  searchTracks(query);
+              onChanged: (value) {
+                if (value.isNotEmpty) {
+                  _searchTracks(value);
+                } else {
+                  setState(() {
+                    isSearching = false;
+                  });
                 }
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF1DB954),
-                foregroundColor: Colors.white,
-              ),
-              child: Text("Search"),
             ),
-            SizedBox(height: 20),
-            isLoading
+          ),
+          // Results
+          Expanded(
+            child: isLoading
                 ? Center(child: CircularProgressIndicator())
-                : showResults
-                    ? Expanded(
-                        child: ListView.builder(
-                          itemCount: searchResults.length,
-                          itemBuilder: (context, index) {
-                            final track = searchResults[index];
-                            return TrackCard(
-                              track: track,
-                              onDelete: () => deleteMovie(index),
-                            );
-                          },
+                : ListView.builder(
+                    itemCount:
+                        isSearching ? searchResults.length : tracks.length,
+                    itemBuilder: (context, index) {
+                      final track =
+                          isSearching ? searchResults[index] : tracks[index];
+                      return Card(
+                        color: AppColors.spotifyDarkGrey,
+                        margin:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: ListTile(
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.network(
+                              track['images']?[0]?['url'] ??
+                                  track['album']?['images']?[0]?['url'] ??
+                                  '',
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Icon(Icons.music_note,
+                                      color: AppColors.spotifyGreen),
+                            ),
+                          ),
+                          title: Text(
+                            track['name'] ?? '',
+                            style: TextStyle(color: AppColors.spotifyWhite),
+                          ),
+                          subtitle: Text(
+                            track['artists']?[0]?['name'] ?? '',
+                            style: TextStyle(
+                                color: AppColors.spotifyWhite.withOpacity(0.7)),
+                          ),
+                          trailing: IconButton(
+                            icon: Icon(Icons.playlist_add,
+                                color: AppColors.spotifyGreen),
+                            onPressed: () => _showAddToPlaylistDialog(track),
+                          ),
                         ),
-                      )
-                    : Center(
-                        child: Text(
-                          "Search for a track to see results",
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                      ),
-          ],
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddToPlaylistDialog(dynamic track) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.spotifyDarkGrey,
+        title: Text('Add to Playlist',
+            style: TextStyle(color: AppColors.spotifyWhite)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: playlists.length,
+            itemBuilder: (context, index) {
+              final playlist = playlists[index];
+              return ListTile(
+                title: Text(playlist['name'],
+                    style: TextStyle(color: AppColors.spotifyWhite)),
+                onTap: () {
+                  playlist['tracks'].add(track);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Added to ${playlist['name']}'),
+                      backgroundColor: AppColors.spotifyGreen,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );
   }
 }
 
-class TrackCard extends StatelessWidget {
-  final dynamic track;
-  final VoidCallback onDelete;
+class PlaylistsScreen extends StatelessWidget {
+  final List<Map<String, dynamic>> playlists;
 
-  const TrackCard({required this.track, required this.onDelete, Key? key})
-      : super(key: key);
+  PlaylistsScreen({required this.playlists});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: Colors.grey[900],
-      margin: EdgeInsets.symmetric(vertical: 10),
-      child: ListTile(
-        leading: track['album']['images'].isNotEmpty
-            ? Image.network(
-                track['album']['images'].last['url'],
-                fit: BoxFit.cover,
-                width: 50,
-                height: 50,
-              )
-            : Icon(Icons.music_note, size: 50, color: Color(0xFF1DB954)),
-        title: Text(
-          track['name'],
-          style: TextStyle(color: Colors.white),
-        ),
-        subtitle: Text(
-          "${track['artists'][0]['name']}\n${track['album']['name']}",
-          style: TextStyle(color: Colors.white70),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: Icon(Icons.favorite_border, color: Colors.white),
-              onPressed: () async {
-                await DatabaseHelper.instance.saveFavoriteTrack(track);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Added to favorites')),
-                );
-              },
-            ),
-            Icon(Icons.arrow_forward, color: Colors.white),
-          ],
-        ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  TrackDetails(track: track, onDelete: onDelete),
-            ),
+    return Scaffold(
+      appBar: AppBar(title: Text('My Playlists')),
+      body: ListView.builder(
+        itemCount: playlists.length,
+        itemBuilder: (context, index) {
+          final playlist = playlists[index];
+          return ListTile(
+            title: Text(playlist['name']),
+            subtitle: Text('${playlist['tracks'].length} tracks'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      PlaylistDetailScreen(playlist: playlist),
+                ),
+              );
+            },
           );
         },
       ),
@@ -269,118 +407,23 @@ class TrackCard extends StatelessWidget {
   }
 }
 
-class TrackDetails extends StatelessWidget {
-  final dynamic track;
-  final VoidCallback onDelete;
+class PlaylistDetailScreen extends StatelessWidget {
+  final Map<String, dynamic> playlist;
 
-  const TrackDetails({required this.track, required this.onDelete, Key? key})
-      : super(key: key);
+  PlaylistDetailScreen({required this.playlist});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(track['name'], style: TextStyle(color: Colors.white)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: track['album']['images'].isNotEmpty
-                  ? Image.network(
-                      track['album']['images'][0]['url'],
-                      fit: BoxFit.cover,
-                      height: 300,
-                    )
-                  : Icon(Icons.music_note, size: 100, color: Color(0xFF1DB954)),
-            ),
-            SizedBox(height: 20),
-            Text(
-              track['name'],
-              style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white),
-            ),
-            SizedBox(height: 10),
-            Text(
-              "Artist: ${track['artists'][0]['name']}",
-              style: TextStyle(fontSize: 16, color: Colors.white70),
-            ),
-            SizedBox(height: 10),
-            Text(
-              "Album: ${track['album']['name']}",
-              style: TextStyle(fontSize: 16, color: Colors.white70),
-            ),
-            SizedBox(height: 20),
-            Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  onDelete();
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                ),
-                child:
-                    Text("DELETE TRACK", style: TextStyle(color: Colors.white)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class FavoriteTracksScreen extends StatelessWidget {
-  final List<Map<String, dynamic>> favoriteTracks;
-  final Function(String) onDelete;
-
-  const FavoriteTracksScreen({
-    required this.favoriteTracks,
-    required this.onDelete,
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Favorite Tracks', style: TextStyle(color: Colors.white)),
-      ),
+      appBar: AppBar(title: Text(playlist['name'])),
       body: ListView.builder(
-        itemCount: favoriteTracks.length,
+        itemCount: playlist['tracks'].length,
         itemBuilder: (context, index) {
-          final track = favoriteTracks[index];
-          return Card(
-            color: Colors.grey[900],
-            margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-            child: ListTile(
-              leading: track['imageUrl'].isNotEmpty
-                  ? Image.network(
-                      track['imageUrl'],
-                      width: 50,
-                      height: 50,
-                      fit: BoxFit.cover,
-                    )
-                  : Icon(Icons.music_note, color: Color(0xFF1DB954)),
-              title: Text(
-                track['name'],
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                '${track['artist']}\n${track['albumName']}',
-                style: TextStyle(color: Colors.white70),
-              ),
-              trailing: IconButton(
-                icon: Icon(Icons.delete, color: Colors.red),
-                onPressed: () => onDelete(track['id']),
-              ),
-            ),
+          final track = playlist['tracks'][index];
+          return ListTile(
+            leading: Image.network(track['images'][0]['url']),
+            title: Text(track['name']),
+            subtitle: Text(track['artists'][0]['name']),
           );
         },
       ),
